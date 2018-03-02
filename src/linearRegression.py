@@ -1,12 +1,16 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from scipy.stats import ttest_ind
 from numpy import median
 from sklearn.model_selection import train_test_split, KFold, GridSearchCV, cross_val_score
 from sklearn.linear_model import LinearRegression, LassoCV, RidgeCV, ElasticNetCV, Ridge, Lasso
 from scipy.stats import skew
+import seaborn as sns
+
+nFolds = 10
+skewThres = 0
 
 def rmse(actual, predictions):
     #return np.sqrt(np.sum(np.log(actual) - np.log(predictions))**2/len(actual))
@@ -20,8 +24,8 @@ def nestedCrossValidation(X, y, model, parameterGrid, scoringFunction):
     scores = np.zeros(numIterations)
     for i in range(numIterations):
         print("Iteration %d" %i)
-        innerCV = KFold(n_splits=5, shuffle=True, random_state=i)
-        outerCV = KFold(n_splits=5, shuffle=True, random_state=i+1+numIterations)
+        innerCV = KFold(n_splits=nFolds, shuffle=True, random_state=i)
+        outerCV = KFold(n_splits=nFolds, shuffle=True, random_state=i+1+numIterations)
         gridSearch = GridSearchCV(estimator=model, param_grid=parameterGrid, scoring=scoringFunction, cv=innerCV, verbose=0)
         nestedScore = np.sqrt(-cross_val_score(gridSearch, X=X, y=y, cv=outerCV, scoring=scoringFunction))
         print(nestedScore)
@@ -34,7 +38,7 @@ def crossValidation(X, y, model, parameterGrid, scoringFunction):
     scores = np.zeros(numIterations)
     for i in range(numIterations):
         print("Iteration %d" %i)
-        gridSearch = GridSearchCV(estimator=model, param_grid=parameterGrid, scoring=scoringFunction, cv=10, verbose=0)
+        gridSearch = GridSearchCV(estimator=model, param_grid=parameterGrid, scoring=scoringFunction, cv=nFolds, verbose=0)
         gridSearch.fit(X,y)
         nestedScore = np.sqrt(-gridSearch.best_score_)
         print("score: %.5f" % nestedScore.mean())
@@ -73,9 +77,12 @@ train = train[train['GrLivArea']<4000]
 # train = train[train['OpenPorchSF']<500]
 # print "OpenPorchSF", train.shape
 
+#train = train.drop(columns=['GarageCars', 'TotRmsAbvGrd', 'GarageCars', '1stFlrSF', 'GarageYrBlt'])
+#test = test.drop(columns=['GarageCars', 'TotRmsAbvGrd', 'GarageCars', '1stFlrSF', 'GarageYrBlt'])
+
 correlations = train.corr().sort_values(by='SalePrice', ascending=False)
 print correlations['SalePrice']
-  
+
 # for feat in correlations['SalePrice'].index:
 #     train.plot.scatter(feat, 'SalePrice')
 #     plt.show()
@@ -142,42 +149,33 @@ allData["BsmtHalfBath"] = allData["BsmtHalfBath"].fillna(allData["BsmtHalfBath"]
 # allData["LotArea-2"] = np.sqrt(allData["LotArea"])
 # allData["GrLivArea-2"] = allData["GrLivArea"] ** 2
 # allData["GrLivArea-3"] = allData["GrLivArea"] ** 3
-# allData["1stFlrSF-2"] = allData["1stFlrSF"] ** 2
-# allData["1stFlrSF-3"] = allData["1stFlrSF"] ** 3
-# allData["TotalSF"] = allData["1stFlrSF"] + allData["2ndFlrSF"] + allData["TotalBsmtSF"]
+# #allData["1stFlrSF-2"] = allData["1stFlrSF"] ** 2
+# #allData["1stFlrSF-3"] = allData["1stFlrSF"] ** 3
+# allData["TotalSF"] = allData["2ndFlrSF"] + allData["TotalBsmtSF"]
  
 isNa = allData.isna().sum()
 print "missing values:", isNa[isNa>0].sort_values(ascending=False)
 
 numeric_feats = allData.dtypes[allData.dtypes != "object"].index
+categoricFeats = allData.dtypes[allData.dtypes == "object"].index
 
 skewed_feats = allData[numeric_feats].apply(lambda x: skew(x.dropna())) #compute skewness
-skewed_feats = skewed_feats[skewed_feats > 0.25]
+skewed_feats = skewed_feats[skewed_feats > skewThres]
 
 skewed_feats = skewed_feats.index
 #print len(skewed_feats), len(numeric_feats)
 allData[skewed_feats] = np.log1p(allData[skewed_feats])
-numeric_feats = numeric_feats.drop('SalePrice')
+numeric_feats = numeric_feats.drop(['SalePrice', 'Id'])
 print numeric_feats
 
 stdSc = StandardScaler()
 allData[numeric_feats] = stdSc.fit_transform(allData[numeric_feats] )
 
-
-
-
 allData = pd.get_dummies(allData)
 trainFilled = allData[0:train.shape[0]]
 testFilled = allData[train.shape[0]:]
-print trainFilled.shape
-print testFilled.shape
 
-correlations = trainFilled.corr().sort_values(by='SalePrice', ascending=False)
-print correlations['SalePrice']
-   
-for feat in correlations['SalePrice'].index:
-    trainFilled.plot.scatter(feat, 'SalePrice')
-    plt.show()
+
 
 
 #scatter plots of variables strongly correlated to SalePrice
@@ -187,24 +185,17 @@ for feat in correlations['SalePrice'].index:
 #trainFilled.plot.scatter(x='TotalBsmtSF', y='SalePrice')
 #trainFilled.plot.scatter(x='MasVnrArea', y='SalePrice')
 
-#box plot to detect outliers
-#trainFilled.boxplot(column="TotalBsmtSF")
-#plt.show()
-
-#check skewness of SalePrice
-#train['SalePrice'].hist(bins=20)
-#plt.show()
 
 numRuns = 1
 errors = [0]*numRuns
 ridgeCV = RidgeCV(alphas=[21,22,23,24,25,26,27,28,29,30],scoring="neg_mean_squared_error", 
-                  normalize=False, cv=5)
+                  normalize=False, cv=nFolds)
 ridge = Ridge(normalize=False)
 alphasRidge = {"alpha":[13,14,15,16,17,20, 21, 22, 23, 24, 25]}
 
 alphasLasso = {"alpha":[0.0005,0.001, 0.005]}
 lasso = Lasso(max_iter=1000)
-lassoCV = LassoCV(alphas=[0.0005,0.001, 0.005], normalize=False, cv=10, max_iter=1000)
+lassoCV = LassoCV(alphas=[0.0005,0.001, 0.005], normalize=False, cv=nFolds, max_iter=1000)
 #lassoCV.fit(trainFilled.drop(columns='SalePrice'), trainFilled['SalePrice'])
 
 
@@ -212,9 +203,12 @@ testModel = ridge
 testParams = alphasRidge
 predModel = ridgeCV
 
-Xtrain = trainFilled.drop(columns='SalePrice')
+Xtrain = trainFilled.drop(columns=['SalePrice', 'Id'])
 ytrain = trainFilled['SalePrice']
 
+testFilled = testFilled.drop(columns=['Id'])
+print trainFilled.shape
+print testFilled.shape
 
 # error = nestedCrossValidation(Xtrain, ytrain, 
 #                       testModel, testParams, "neg_mean_squared_error")
@@ -228,17 +222,9 @@ print("mean error from non-nested CV: %.5f " %np.mean(errorNonNested) )
 
 predModel.fit(Xtrain, ytrain)
 print "best alpha", predModel.alpha_
-predictionsSub = predModel.predict(testFilled.drop(columns='SalePrice'))
+predictionsSub = predModel.predict(testFilled.drop(columns=['SalePrice']))
 predictionsSub = np.expm1(predictionsSub)
 
-# 
-# salePricePredict = reg.predict(test[featureNames])
-# for i in range(len(salePricePredict)):
-#     if salePricePredict[i] <= 0:
-#         print i+1461, salePricePredict[i]
-#         salePricePredict[i] = 0
-# print sum(salePricePredict<0)
-# 
  
 #solution = pd.DataFrame({"id":test.Id, "SalePrice":predictionsSub})
 #solution.to_csv("../data/submission.csv", index = False)
