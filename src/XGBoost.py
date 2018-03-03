@@ -1,17 +1,13 @@
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.preprocessing import StandardScaler, PolynomialFeatures, RobustScaler
-from scipy.stats import ttest_ind
-from numpy import median
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.model_selection import train_test_split, KFold, GridSearchCV, cross_val_score
-from sklearn.linear_model import LinearRegression, LassoCV, RidgeCV, ElasticNetCV, Ridge, Lasso
 from scipy.stats import skew
-import seaborn as sns
-from sklearn.metrics import r2_score
+from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor, GradientBoostingRegressor
+from xgboost import XGBRegressor
 
-nFolds = 10
-skewThres = 0
+nFolds = 5
+skewThres = 0.75
 
 def rmse(actual, predictions):
     #return np.sqrt(np.sum(np.log(actual) - np.log(predictions))**2/len(actual))
@@ -39,13 +35,14 @@ def crossValidation(X, y, model, parameterGrid, scoringFunction):
     scores = np.zeros(numIterations)
     for i in range(numIterations):
         print("Iteration %d" %i)
-        gridSearch = GridSearchCV(estimator=model, param_grid=parameterGrid, scoring=scoringFunction, cv=nFolds, verbose=0)
+        gridSearch = GridSearchCV(estimator=model, param_grid=parameterGrid, scoring=scoringFunction, cv=nFolds, verbose=2)
         gridSearch.fit(X,y)
         nestedScore = np.sqrt(-gridSearch.best_score_)
-        print("score: %.5f" % nestedScore.mean())
+        
         print("best alpha:", gridSearch.best_params_)
         scores[i] = nestedScore.mean()
-    return scores
+    print("score: %.5f" % scores.mean())
+    return gridSearch.best_params_
 
 train = pd.read_csv('../data/train.csv')
 test = pd.read_csv('../data/test.csv')
@@ -146,13 +143,12 @@ allData["BsmtFinSF1"] = allData["BsmtFinSF1"].fillna(allData["BsmtFinSF1"].media
 allData["BsmtFullBath"] = allData["BsmtFullBath"].fillna(allData["BsmtFullBath"].median())
 allData["BsmtHalfBath"] = allData["BsmtHalfBath"].fillna(allData["BsmtHalfBath"].median())
 
-
 # allData["YearBuilt-2"] = allData["YearBuilt"] ** 2
 # allData["LotArea-2"] = np.sqrt(allData["LotArea"])
 # allData["GrLivArea-2"] = allData["GrLivArea"] ** 2
 # allData["GrLivArea-3"] = allData["GrLivArea"] ** 3
-# #allData["1stFlrSF-2"] = allData["1stFlrSF"] ** 2
-# #allData["1stFlrSF-3"] = allData["1stFlrSF"] ** 3
+# allData["1stFlrSF-2"] = allData["1stFlrSF"] ** 2
+# allData["1stFlrSF-3"] = allData["1stFlrSF"] ** 3
 # allData["TotalSF"] = allData["2ndFlrSF"] + allData["TotalBsmtSF"]
  
 isNa = allData.isna().sum()
@@ -190,20 +186,6 @@ testFilled = allData[train.shape[0]:]
 
 numRuns = 1
 errors = [0]*numRuns
-ridgeCV = RidgeCV(alphas=[21,22,23,24,25,26,27,28,29,30],scoring="neg_mean_squared_error", 
-                  normalize=False, cv=nFolds)
-ridge = Ridge(normalize=False)
-alphasRidge = {"alpha":[13,14,15,16,17,20, 21, 22, 23, 24, 25]}
-
-alphasLasso = {"alpha":[0.0005,0.001, 0.005]}
-lasso = Lasso(max_iter=1000)
-lassoCV = LassoCV(alphas=[0.0005,0.001, 0.005], normalize=False, cv=nFolds, max_iter=1000)
-#lassoCV.fit(trainFilled.drop(columns='SalePrice'), trainFilled['SalePrice'])
-
-
-testModel = ridge
-testParams = alphasRidge
-predModel = ridgeCV
 
 Xtrain = trainFilled.drop(columns=['SalePrice', 'Id'])
 ytrain = trainFilled['SalePrice']
@@ -212,53 +194,38 @@ testFilled = testFilled.drop(columns=['Id'])
 print trainFilled.shape
 print testFilled.shape
 
+xgbReg = XGBRegressor(random_state=0)
+paramsXGB = {"max_depth":[3], "learning_rate":[0.1], "n_estimators":[400], "gamma":[0.01], "reg_alpha":[0], "reg_lambda":[1]
+             , "subsample":[0.8], "colsample_bytree":[.9], "colsample_bylevel":[0.5], "scale_pos_weight":[1]}
+testModel = xgbReg
+testParams = paramsXGB
+predModel = xgbReg
+
 # error = nestedCrossValidation(Xtrain, ytrain, 
 #                       testModel, testParams, "neg_mean_squared_error")
 # print("mean error from nested CV: {0}, variance: {1}".format(np.mean(error), np.var(error)) )
   
-errorNonNested = crossValidation(Xtrain, ytrain, 
+optParams = crossValidation(Xtrain, ytrain, 
                       testModel, testParams, "neg_mean_squared_error")
   
-print("mean error from non-nested CV: %.5f " %np.mean(errorNonNested) )
+print("best params from non-nested CV:  ", optParams )
 #print("mean rmseCV: %.5f" % rmseCV(ridge, "neg_mean_squared_error", Xtrain, ytrain).mean())
+predModel.set_params(max_depth=optParams["max_depth"], n_estimators=optParams["n_estimators"], gamma=optParams["gamma"],
+                     subsample=optParams["subsample"], colsample_bytree=optParams["colsample_bytree"],
+                     colsample_bylevel=optParams["colsample_bylevel"])
+print("model params:", predModel.get_params())
 
 predModel.fit(Xtrain, ytrain)
-
-
-
-ytrain_pred = predModel.predict(Xtrain)
-print "r2 score", r2_score(ytrain, ytrain_pred)
-print sorted(ytrain_pred - ytrain)[0:20]
-
-# plt.scatter(ytrain_pred, ytrain_pred - ytrain, c = "lightgreen", marker = "s", label = "Validation data")
-# plt.title("Linear regression")
-# plt.xlabel("Predicted values")
-# plt.ylabel("Residuals")
-# plt.legend(loc = "upper left")
-# plt.hlines(y = 0, xmin = 10.5, xmax = 13.5, color = "red")
-# plt.show()
-# 
-# plt.scatter(ytrain_pred, ytrain, c = "lightgreen", marker = "s", label = "Validation data")
-# plt.title("Linear regression with Ridge regularization")
-# plt.xlabel("Predicted values")
-# plt.ylabel("Real values")
-# plt.legend(loc = "upper left")
-# plt.plot([10.5, 13.5], [10.5, 13.5], c = "red")
-# plt.show()
-
-print "best alpha", predModel.alpha_
 predictionsSub = predModel.predict(testFilled.drop(columns=['SalePrice']))
 predictionsSub = np.expm1(predictionsSub)
 
-
-
-
  
-#solution = pd.DataFrame({"id":test.Id, "SalePrice":predictionsSub})
-#solution.to_csv("../data/submission.csv", index = False)
+solution = pd.DataFrame({"Id":test.Id, "SalePrice":predictionsSub})
+solution.set_index("Id")
+solution.to_csv("../data/submissionXGB.csv", index = False)
 
-values = zip(test['Id'], predictionsSub) 
-with open('../data/submission.csv', 'w') as file:
-    file.write('Id,SalePrice\n')
-    for id,value in values:
-        file.write(str(id)+","+str(value)+"\n")
+# values = zip(test['Id'], predictionsSub) 
+# with open('../data/submissionForest.csv', 'w') as file:
+#     file.write('Id,SalePrice\n')
+#     for id,value in values:
+#         file.write(str(id)+","+str(value)+"\n")

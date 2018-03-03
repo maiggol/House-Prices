@@ -5,6 +5,8 @@ from sklearn.model_selection import KFold, GridSearchCV, cross_val_score
 from scipy.stats import skew
 from sklearn import svm
 from scipy.stats import pearsonr
+import matplotlib.pyplot as plt
+from sklearn.metrics import r2_score
 
 nFolds = 3
 skewThres = 0.
@@ -216,6 +218,27 @@ print "testModel", svr.get_params()
 #print("mean rmseCV: %.5f" % rmseCV(ridge, "neg_mean_squared_error", Xtrain, ytrain).mean())
 
 predModel.fit(Xtrain, ytrain)
+
+ytrain_pred = predModel.predict(Xtrain)
+
+print "r2 score", r2_score(ytrain, ytrain_pred)
+
+plt.scatter(ytrain_pred, ytrain_pred - ytrain, c = "lightgreen", marker = "s", label = "Validation data")
+plt.title("Linear regression")
+plt.xlabel("Predicted values")
+plt.ylabel("Residuals")
+plt.legend(loc = "upper left")
+plt.hlines(y = 0, xmin = 10.5, xmax = 13.5, color = "red")
+plt.show()
+
+plt.scatter(np.expm1(ytrain_pred), np.expm1(ytrain), c = "lightgreen", marker = "s", label = "Validation data")
+plt.title("Linear regression with Ridge regularization")
+plt.xlabel("Predicted values")
+plt.ylabel("Real values")
+plt.legend(loc = "upper left")
+plt.plot([np.expm1(10.5), np.expm1(13.5)], [np.expm1(10.5), np.expm1(13.5)], c = "red")
+plt.show()
+
 predictionsSVR = predModel.predict(testFilled.drop(columns=['SalePrice']))
 predictionsSVR = np.expm1(predictionsSVR)
 
