@@ -9,9 +9,10 @@ from sklearn.linear_model import LinearRegression, LassoCV, RidgeCV, ElasticNetC
 from scipy.stats import skew
 import seaborn as sns
 from sklearn.metrics import r2_score
+from scipy.special import boxcox1p
 
 nFolds = 10
-skewThres = 0
+skewThres = 0.
 
 def rmse(actual, predictions):
     #return np.sqrt(np.sum(np.log(actual) - np.log(predictions))**2/len(actual))
@@ -161,14 +162,22 @@ print "missing values:", isNa[isNa>0].sort_values(ascending=False)
 numeric_feats = allData.dtypes[allData.dtypes != "object"].index
 categoricFeats = allData.dtypes[allData.dtypes == "object"].index
 
-skewed_feats = allData[numeric_feats].apply(lambda x: skew(x.dropna())) #compute skewness
+skewed_feats = allData[numeric_feats].apply(lambda x: abs(skew(x.dropna()))) #compute skewness
 skewed_feats = skewed_feats[skewed_feats > skewThres]
-
+skewed_feats = skewed_feats.drop(['SalePrice'])
 skewed_feats = skewed_feats.index
-#print len(skewed_feats), len(numeric_feats)
-allData[skewed_feats] = np.log1p(allData[skewed_feats])
+
 numeric_feats = numeric_feats.drop(['SalePrice', 'Id'])
 print numeric_feats
+
+allData["SalePrice"] = np.log1p(allData["SalePrice"])
+#allData[skewed_feats] = np.log1p(allData[skewed_feats])
+allData[skewed_feats] =boxcox1p(allData[skewed_feats], 0.25)
+#for feat in skewed_feats:
+#    allData[feat] = boxcox1p(allData[feat], 0.01)
+    
+
+
 
 stdSc = StandardScaler()
 allData[numeric_feats] = stdSc.fit_transform(allData[numeric_feats] )
@@ -258,7 +267,7 @@ predictionsSub = np.expm1(predictionsSub)
 #solution.to_csv("../data/submission.csv", index = False)
 
 values = zip(test['Id'], predictionsSub) 
-with open('../data/submission.csv', 'w') as file:
+with open('../data/submissionLR.csv', 'w') as file:
     file.write('Id,SalePrice\n')
     for id,value in values:
         file.write(str(id)+","+str(value)+"\n")

@@ -1,7 +1,7 @@
 import pandas as pd
 from scipy.stats import pearsonr
 
-predictionsLR = pd.read_csv('../data/submissionRidge.csv')
+predictionsLR = pd.read_csv('../data/submissionLR.csv')
 predictionsSVR = pd.read_csv('../data/submissionSVR.csv')
 print predictionsLR["Id"].values
 predictionsEnsemble = (predictionsLR['SalePrice'].values + predictionsSVR['SalePrice'].values)/2

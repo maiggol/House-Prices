@@ -7,8 +7,9 @@ from sklearn import svm
 from scipy.stats import pearsonr
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
+from scipy.special import boxcox1p
 
-nFolds = 3
+nFolds = 5
 skewThres = 0.
 
 
@@ -161,14 +162,17 @@ print "missing values:", isNa[isNa>0].sort_values(ascending=False)
 numeric_feats = allData.dtypes[allData.dtypes != "object"].index
 categoricFeats = allData.dtypes[allData.dtypes == "object"].index
 
-skewed_feats = allData[numeric_feats].apply(lambda x: skew(x.dropna())) #compute skewness
+skewed_feats = allData[numeric_feats].apply(lambda x: abs(skew(x.dropna()))) #compute skewness
 skewed_feats = skewed_feats[skewed_feats > skewThres]
-
+skewed_feats = skewed_feats.drop(['SalePrice'])
 skewed_feats = skewed_feats.index
-#print len(skewed_feats), len(numeric_feats)
-allData[skewed_feats] = np.log1p(allData[skewed_feats])
+
 numeric_feats = numeric_feats.drop(['SalePrice', 'Id'])
 print numeric_feats
+
+allData["SalePrice"] = np.log1p(allData["SalePrice"])
+#allData[skewed_feats] = np.log1p(allData[skewed_feats])
+allData[skewed_feats] =boxcox1p(allData[skewed_feats], 0.3)
 
 stdSc = StandardScaler()
 allData[numeric_feats] = stdSc.fit_transform(allData[numeric_feats] )
@@ -223,21 +227,21 @@ ytrain_pred = predModel.predict(Xtrain)
 
 print "r2 score", r2_score(ytrain, ytrain_pred)
 
-plt.scatter(ytrain_pred, ytrain_pred - ytrain, c = "lightgreen", marker = "s", label = "Validation data")
-plt.title("Linear regression")
-plt.xlabel("Predicted values")
-plt.ylabel("Residuals")
-plt.legend(loc = "upper left")
-plt.hlines(y = 0, xmin = 10.5, xmax = 13.5, color = "red")
-plt.show()
-
-plt.scatter(np.expm1(ytrain_pred), np.expm1(ytrain), c = "lightgreen", marker = "s", label = "Validation data")
-plt.title("Linear regression with Ridge regularization")
-plt.xlabel("Predicted values")
-plt.ylabel("Real values")
-plt.legend(loc = "upper left")
-plt.plot([np.expm1(10.5), np.expm1(13.5)], [np.expm1(10.5), np.expm1(13.5)], c = "red")
-plt.show()
+# plt.scatter(ytrain_pred, ytrain_pred - ytrain, c = "lightgreen", marker = "s", label = "Validation data")
+# plt.title("Linear regression")
+# plt.xlabel("Predicted values")
+# plt.ylabel("Residuals")
+# plt.legend(loc = "upper left")
+# plt.hlines(y = 0, xmin = 10.5, xmax = 13.5, color = "red")
+# plt.show()
+# 
+# plt.scatter(np.expm1(ytrain_pred), np.expm1(ytrain), c = "lightgreen", marker = "s", label = "Validation data")
+# plt.title("Linear regression with Ridge regularization")
+# plt.xlabel("Predicted values")
+# plt.ylabel("Real values")
+# plt.legend(loc = "upper left")
+# plt.plot([np.expm1(10.5), np.expm1(13.5)], [np.expm1(10.5), np.expm1(13.5)], c = "red")
+# plt.show()
 
 predictionsSVR = predModel.predict(testFilled.drop(columns=['SalePrice']))
 predictionsSVR = np.expm1(predictionsSVR)
